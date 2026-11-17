@@ -36,13 +36,23 @@ function syncAlarms(){
   clearTimeout(syncT);
   syncT=setTimeout(()=>{
     const now=Date.now(),out=[];
+    const ctx=[];
     items.forEach(i=>{
-      if(i.done||!(i.at>now))return;
-      out.push({key:i.id,id:i.id,title:i.title,body:fmtWhen(i.at),at:i.at,repeat:i.repeat||'none',kind:'main',early:+i.early||0});
+      if(i.done)return;
+      if(i.trig){
+        if(!i.fired)ctx.push({id:i.id,title:i.title,type:i.trig.type,device:i.trig.device||'',lat:i.trig.lat||0,lng:i.trig.lng||0,radius:150,body:trigLabel(i),nag:!!i.nag,buddy:i.buddy||''});
+        return;
+      }
+      if(!(i.at>now)){
+        if(i.nag&&i.fired)out.push({key:i.id,id:i.id,title:i.title,body:fmtWhen(i.at),at:i.at,repeat:i.repeat||'none',kind:'main',early:0,nag:true,buddy:i.buddy||''});
+        return;
+      }
+      out.push({key:i.id,id:i.id,title:i.title,body:fmtWhen(i.at),at:i.at,repeat:i.repeat||'none',kind:'main',early:+i.early||0,nag:!!i.nag,buddy:i.buddy||''});
       const e=+i.early||0;
       if(e&&i.at-e*6e4>now)out.push({key:i.id+'_e',id:i.id,title:i.title,body:rel(i.at).replace('בעוד','זה בעוד'),at:i.at-e*6e4,repeat:'none',kind:'early',early:e});
     });
     try{window.AndroidApp.setAlarms(JSON.stringify(out))}catch(e){}
+    try{window.AndroidApp.setContext(JSON.stringify(ctx))}catch(e){}
   },150);
 }
 
@@ -289,20 +299,35 @@ function getDT(){
   const [y,mo,da]=dateI.value.split('-').map(Number),[h,mi]=timeI.value.split(':').map(Number);
   return new Date(y,mo-1,da,h,mi,0,0).getTime();
 }
+function newId(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
 $('#add').addEventListener('click',()=>{
   const raw=txt.value.trim();
   if(!raw){toast('כתוב קודם על מה להזכיר 🙂');txt.focus();return}
-  const p=parse(raw);
-  const title=(p.clean&&p.clean.length>1)?p.clean:raw;
-  const at=getDT();
-  if(isNaN(at)){toast('בחר תאריך ושעה');return}
-  if(at<Date.now()-3e4){toast('הזמן הזה כבר עבר ⏳');return}
-  const i={id:Date.now().toString(36)+Math.random().toString(36).slice(2,6),title,at,repeat:$('#repeat').value,pri:$('#pri').value,cat:selCat||guessCat(raw)||'personal',early:+$('#early').value||0,done:false,fired:false,created:Date.now()};
+  const pc=NATIVE?parseCtx(raw):{clean:raw};
+  const p=parse(pc.clean);
+  let title=(p.clean&&p.clean.length>1)?p.clean:pc.clean||raw;
+  title=title.replace(/^ו(?=[לבמהכש])/,'').trim()||raw;
+  let at, trig=null;
+  if(NATIVE&&trigMode!=='time'){
+    trig=buildTrig(trigMode);
+    if(!trig)return;
+    at=9e15;
+  }else{
+    at=getDT();
+    if(isNaN(at)){toast('בחר תאריך ושעה');return}
+    if(at<Date.now()-3e4){toast('הזמן הזה כבר עבר ⏳');return}
+  }
+  const nag=NATIVE&&$('#nag').checked, buddy=nag?$('#buddy').value.trim():'';
+  const i={id:newId(),title,at,repeat:trig?'none':$('#repeat').value,pri:nag?'high':$('#pri').value,cat:selCat||guessCat(raw)||'personal',early:trig?0:(+$('#early').value||0),done:false,fired:false,created:Date.now()};
+  if(trig)i.trig=trig;
+  if(nag){i.nag=true;if(buddy)i.buddy=buddy}
   items.push(i);render();
   txt.value='';hint.textContent='';clearChips();manualTime=false;$('#repeat').value='none';$('#pri').value='normal';$('#early').value='0';selCat=null;catAuto=true;renderCats();defaultDT();
-  toast('✅ נקבע ל'+fmtWhen(at));
+  if(NATIVE){$('#nag').checked=false;$('#buddy').value='';$('#buddy').style.display='none';setTrig('time')}
+  toast(trig?'✅ אזכיר '+trigLabel(i):'✅ נקבע ל'+fmtWhen(at));
   put(i).then(()=>gcalCreate(i));
   askPermission(true);
+  if(nag&&buddy&&NATIVE&&!nstatus().sms)AndroidApp.requestPerm('sms');
 });
 txt.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();$('#add').click()}});
 
@@ -338,18 +363,19 @@ function render(){
   const now=new Date();let html='',last='';
   arr.forEach(i=>{
     let g;const d=new Date(i.at);
-    if(!i.done&&i.at<Date.now())g='⚠️ פספסת';
+    if(i.trig&&!i.done)g='🧭 לפי מצב';
+    else if(!i.done&&i.at<Date.now())g='⚠️ פספסת';
     else if(sameDay(d,now))g='היום';
     else{const t=new Date(now);t.setDate(t.getDate()+1);g=sameDay(d,t)?'מחר':(i.at-Date.now()<7*864e5&&i.at>Date.now()?'השבוע':'בהמשך')}
     if(filter!=='done'&&g!==last){html+='<div class="group">'+g+'</div>';last=g}
-    const over=!i.done&&i.at<Date.now();
+    const over=!i.done&&i.at<Date.now()&&!i.trig;
     const calAct=(NATIVE||i.gstate==='ok'||i.gstate==='pending')?'':(gcalReady?'<button class="act" data-a="gcal" data-id="'+i.id+'">📅 ליומן</button>':'<a class="act" style="text-decoration:none" target="_blank" rel="noopener" href="'+gcalLink(i)+'">📅 ליומן</a>');
     html+='<div class="item'+(i.done?' done':'')+(over?' overdue':'')+'" style="'+(!i.done&&!over?'border-right-color:'+(CATMAP[i.cat]||CATMAP.personal).c:'')+'">'+
       '<button class="check" data-a="toggle" data-id="'+i.id+'">'+(i.done?'✓':'')+'</button>'+
       '<div class="body"><div class="t">'+(i.pri==='high'?'🔴 ':'')+esc(i.title)+'</div>'+
-      '<div class="meta"><span>'+(CATMAP[i.cat]||CATMAP.personal).e+'</span><span class="when">'+fmtWhen(i.at)+'</span><span>'+rel(i.at)+'</span>'+(i.repeat&&i.repeat!=='none'?'<span class="tag">🔁 '+REP[i.repeat]+'</span>':'')+calBadge(i)+(+i.early?'<span class="tag">🔔 '+earlyTxt(i.early)+'</span>':'')+'</div>'+
+      '<div class="meta"><span>'+(CATMAP[i.cat]||CATMAP.personal).e+'</span>'+(i.trig?'<span class="tag tagc">'+trigLabel(i)+(i.fired?' · הופעל':'')+'</span>':'<span class="when">'+fmtWhen(i.at)+'</span><span>'+rel(i.at)+'</span>')+(i.nag?'<span class="tag tagn">🔥 לא נותן לברוח</span>':'')+(i.repeat&&i.repeat!=='none'?'<span class="tag">🔁 '+REP[i.repeat]+'</span>':'')+calBadge(i)+(+i.early?'<span class="tag">🔔 '+earlyTxt(i.early)+'</span>':'')+'</div>'+
       (i.done?'<div class="acts"><button class="act del" data-a="del" data-id="'+i.id+'">מחק</button></div>':
-      '<div class="acts">'+calAct+'<button class="act" data-a="snz" data-id="'+i.id+'">+1 שעה</button><button class="act" data-a="edit" data-id="'+i.id+'">ערוך</button><button class="act del" data-a="del" data-id="'+i.id+'">מחק</button></div>')+
+      '<div class="acts">'+calAct+(i.trig?'':'<button class="act" data-a="snz" data-id="'+i.id+'">+1 שעה</button>')+(NATIVE?'<button class="act" data-a="share" data-id="'+i.id+'">📤 שלח</button>':'')+'<button class="act" data-a="edit" data-id="'+i.id+'">ערוך</button><button class="act del" data-a="del" data-id="'+i.id+'">מחק</button></div>')+
       '</div></div>';
   });
   list.innerHTML=html;
@@ -366,8 +392,9 @@ $('#list').addEventListener('click',e=>{
     toast('נמחק 🗑️',()=>{undone=true;clearTimeout(t);items.push(i);put(i);render();toast('שוחזר ↩️')});
   }
   else if(a==='snz'){snooze(i,60)}
+  else if(a==='share'){shareItem(i)}
   else if(a==='edit'){
-    txt.value=i.title;setDT(new Date(Math.max(i.at,Date.now()+6e4)));manualTime=true;$('#repeat').value=i.repeat||'none';$('#pri').value=i.pri||'normal';$('#early').value=String(i.early||0);selCat=i.cat||null;catAuto=!i.cat;renderCats();
+    txt.value=i.title;setDT(new Date(Math.min(Math.max(i.at,Date.now()+6e4),Date.now()+3e11)));if(NATIVE){setTrig(i.trig?i.trig.type:'time');$('#nag').checked=!!i.nag;$('#buddy').value=i.buddy||'';$('#buddy').style.display=i.nag?'block':'none'}manualTime=true;$('#repeat').value=i.repeat||'none';$('#pri').value=i.pri||'normal';$('#early').value=String(i.early||0);selCat=i.cat||null;catAuto=!i.cat;renderCats();
     items=items.filter(x=>x!==i);render();drop(i);gcalDelete(i);
     window.scrollTo({top:0,behavior:'smooth'});txt.focus();toast('ערוך ולחץ "הוסף"');
   }
@@ -380,6 +407,7 @@ function snooze(i,min){
 }
 const PRAISE=['כל הכבוד! ✓','אלוף! 💪','עוד אחד ירד מהרשימה 🎯','יפה מאוד! ⭐','מכונה! 🚀'];
 function complete(i){
+  if(NATIVE){try{AndroidApp.dismiss(i.id)}catch(e){}}
   if(i.done){i.done=false;put(i);render();return}
   if(i.repeat&&i.repeat!=='none'){i.at=nextRepeat(i.at,i.repeat);i.fired=false;toast('🔁 הבא: '+fmtWhen(i.at))}
   else{i.done=true;toast(PRAISE[Math.floor(Math.random()*PRAISE.length)])}
@@ -421,7 +449,11 @@ function beep(){
 }
 document.addEventListener('click',()=>{try{actx=actx||new (window.AudioContext||window.webkitAudioContext)();actx.resume&&actx.resume()}catch(e){}},{once:true});
 
-function showAlarm(i){alarmId=i.id;$('#alarmText').textContent=i.title;$('#alarm').classList.add('show')}
+function showAlarm(i){
+  alarmId=i.id;$('#alarmText').textContent=i.title;$('#alarm').classList.add('show');
+  $('#alarm').querySelectorAll('[data-s]').forEach(b=>b.style.display=(i.nag||i.trig)?'none':'');
+  if(NATIVE&&speakOn()){try{AndroidApp.speak((i.nag?'תזכורת חשובה! ':'תזכורת: ')+i.title)}catch(e){}}
+}
 $('#alarm').addEventListener('click',e=>{
   const b=e.target.closest('button');if(!b)return;
   const i=items.find(x=>x.id===alarmId);
@@ -516,23 +548,273 @@ function banner(){
 /* ---------- native (Android) ---------- */
 function nstatus(){try{return JSON.parse(window.AndroidApp.status())}catch(e){return {}}}
 function nativeOk(){const st=nstatus();return st.notifications!==false&&st.exact!==false}
+/* ---------- native extras: triggers, places, voice, multi, share, settings ---------- */
+let trigMode='time';
+const PLACE_PRESETS=['בית','עבודה','סופר','הורים','חדר כושר'];
+function lsGet(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}}
+function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
+function places(){return lsGet('places',[])}
+function carDev(){return lsGet('carDev',null)}
+function speakOn(){return lsGet('speak',true)}
+
+function trigLabel(i){
+  const t=i.trig;if(!t)return '';
+  if(t.type==='car')return '🚗 כשתיכנס לאוטו';
+  if(t.type==='call')return '📞 אחרי השיחה הבאה';
+  if(t.type==='place')return '📍 כשתגיע ל'+(t.name||'מקום');
+  return '';
+}
+function placeOptions(){
+  const saved=places(), names=saved.map(p=>p.name);
+  const all=names.concat(PLACE_PRESETS.filter(n=>!names.includes(n)));
+  const cur=$('#place').value;
+  $('#place').innerHTML=all.map(n=>'<option value="'+esc(n)+'">'+(names.includes(n)?'📍 ':'➕ ')+esc(n)+(names.includes(n)?'':' (עוד לא שמור)')+'</option>').join('')+'<option value="__new">✏️ מקום אחר…</option>';
+  if(cur&&[...$('#place').options].some(o=>o.value===cur))$('#place').value=cur;
+  updatePlaceBtn();
+}
+function updatePlaceBtn(){
+  const n=$('#place').value, saved=places().some(p=>p.name===n);
+  $('#savePlace').textContent=n==='__new'?'✏️ תן שם…':(saved?'🔄 עדכן מיקום':'📍 אני שם עכשיו — שמור');
+}
+function setTrig(t){
+  trigMode=t;
+  document.querySelectorAll('#trig .tg').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
+  const timeOnly=t==='time';
+  $('#rowDT').style.display=timeOnly?'':'none';
+  $('#chips').style.display=timeOnly?'':'none';
+  $('#repeat').parentElement.style.display=timeOnly?'':'none';
+  $('#early').parentElement.style.display=timeOnly?'':'none';
+  $('#placeRow').style.display=t==='place'?'flex':'none';
+  if(t==='place')placeOptions();
+  renderCtxNote();
+}
+function renderCtxNote(){
+  const el=$('#ctxNote');if(trigMode==='time'){el.style.display='none';return}
+  const st=nstatus();let msg='';
+  if(trigMode==='car'){
+    if(!st.bt)msg='כדי לזהות כניסה לאוטו צריך הרשאת Bluetooth. <button data-perm="bt">לאשר</button>';
+    else if(!carDev())msg='טיפ: בחר את הבלוטות׳ של האוטו בהגדרות (🔔 למעלה), אחרת אזכיר בכל חיבור בלוטות׳.';
+  }else if(trigMode==='call'){
+    if(!st.phone)msg='כדי לזהות סוף שיחה צריך הרשאה לטלפון. <button data-perm="phone">לאשר</button>';
+  }else if(trigMode==='place'){
+    if(!st.location)msg='כדי לזהות הגעה למקום צריך הרשאת מיקום. <button data-perm="location">לאשר</button>';
+    else if(!st.bglocation)msg='כדי שזה יעבוד גם כשהאפליקציה סגורה — בחר "לאפשר כל הזמן" במיקום. <button data-perm="bglocation">לאשר</button>';
+  }
+  el.innerHTML=msg;el.style.display=msg?'block':'none';
+}
+function buildTrig(t){
+  if(t==='car'){const d=carDev();return {type:'car',device:d?d.addr:'',devName:d?d.name:''}}
+  if(t==='call')return {type:'call'};
+  if(t==='place'){
+    const n=$('#place').value, p=places().find(x=>x.name===n);
+    if(!p){toast('קודם שמור את המיקום של "'+(n==='__new'?'המקום':n)+'" — כשתהיה שם לחץ "אני שם עכשיו"');return null}
+    return {type:'place',name:p.name,lat:p.lat,lng:p.lng};
+  }
+  return null;
+}
+let pendingPlaceName=null;
+function saveCurrentPlace(){
+  let n=$('#place').value;
+  if(n==='__new'){
+    const v=$('#txt').value.trim();
+    toast('כתוב את שם המקום בשדה "שם מקום" שנפתח');
+    $('#placeName').style.display='block';$('#placeName').focus();return;
+  }
+  if(!nstatus().location){AndroidApp.requestPerm('location');return}
+  pendingPlaceName=n;toast('📡 מאתר מיקום…');
+  AndroidApp.currentLocation();
+}
+window.onLocation=function(loc,err){
+  if(!pendingPlaceName)return;
+  const n=pendingPlaceName;pendingPlaceName=null;
+  if(!loc){toast(err==='no_permission'?'צריך הרשאת מיקום':'לא הצלחתי לאתר מיקום — נסה שוב בחוץ / עם GPS');return}
+  const ps=places().filter(p=>p.name!==n);ps.push({id:newId(),name:n,lat:loc.lat,lng:loc.lng});lsSet('places',ps);
+  placeOptions();$('#place').value=n;updatePlaceBtn();
+  toast('✅ שמרתי את "'+n+'" (דיוק ~'+Math.round(loc.acc||0)+' מ׳)');
+  renderCtxNote();
+};
+
+/* ---- smart context phrases ---- */
+function parseCtx(text){
+  let t=' '+text+' ', type=null, place=null, nag=false;
+  const rm=re=>{t=t.replace(re,' ')};
+  let m;
+  if((m=t.match(/ו?כש(?:אני\s+)?(?:א?כנס|נכנס|אעלה|עולה)\s+(?:ל|אל\s+ה)?(?:אוטו|רכב|מכונית)/))){type='car';rm(m[0])}
+  else if((m=t.match(/ו?(?:אחרי|כש(?:אני\s+)?(?:אסיים|מסיים|גומר|אגמור))\s+(?:את\s+)?ה?שיחה(?:\s+הבאה)?/))){type='call';rm(m[0])}
+  else if((m=t.match(/ו?כש(?:אני\s+)?(?:אגיע|מגיע|אהיה|נמצא|חוזר|אחזור)\s+(?:ל|ב|אל\s+)?ה?([א-ת"׳' ]{2,20}?)(?=\s|$|,)/))){
+    let n=m[1].trim();
+    if(/^בית|^ביתה|^הביתה/.test(n)||n==='בית')n='בית';
+    if(/^סופר/.test(n))n='סופר';
+    if(/^עבודה/.test(n))n='עבודה';
+    if(/^הורים/.test(n))n='הורים';
+    type='place';place=n;rm(m[0]);
+  }
+  else if((m=t.match(/הביתה/))&&/כש/.test(t)){type='place';place='בית';rm(/ו?כש\S*\s+(?:\S+\s+)?הביתה/)}
+  if((m=t.match(/(?:אל\s+תיתן\s+לי\s+(?:לשכוח|לברוח)|דחוף|חשוב\s+מאוד|בלי\s+תירוצים)/))){nag=true;rm(m[0])}
+  return {type,place,nag,clean:t.replace(/\s{2,}/g,' ').trim().replace(/^ו\s+/,'')};
+}
+
+/* ---- multi-reminder splitting ---- */
+function splitMulti(text){
+  return text.split(/\s*(?:[,.;!?\n]|\s(?:וגם|ואז|ובנוסף|ותזכיר\s+לי|ותזכירי\s+לי)\s)\s*/).map(x=>x.replace(/^(?:וגם|ואז|ובנוסף|ו?תזכירי?\s+לי|גם)\s+/,'').replace(/^(?:וגם|ואז|ובנוסף|ו?תזכירי?\s+לי|גם)\s+/,'').trim()).filter(x=>x.length>1);
+}
+function draftFrom(seg){
+  const pc=parseCtx(seg), p=parse(pc.clean);
+  let title=((p.clean&&p.clean.length>1)?p.clean:pc.clean||seg).replace(/^ו(?=[לבמהכש])/,'').trim();
+  const d={title,raw:seg,cat:guessCat(seg)||'personal',repeat:p.rep||'none',nag:pc.nag};
+  if(pc.type){
+    d.trigType=pc.type;d.placeName=pc.place;
+  }else if(p.when){d.at=p.when.getTime()}
+  else{d.at=Date.now()+36e5;d.guessed=true}
+  return d;
+}
+function draftLabel(d){
+  if(d.trigType==='car')return '🚗 כשתיכנס לאוטו';
+  if(d.trigType==='call')return '📞 אחרי השיחה הבאה';
+  if(d.trigType==='place'){const ok=places().some(p=>p.name===d.placeName);return '📍 כשתגיע ל'+d.placeName+(ok?'':' ⚠️ (המקום לא שמור — אזכיר בעוד שעה)')}
+  return '⏰ '+fmtWhen(d.at)+(d.guessed?' (לא אמרת מתי — שמתי בעוד שעה)':'')+(d.repeat!=='none'?' · 🔁 '+REP[d.repeat]:'');
+}
+let drafts=[];
+function showMulti(list){
+  drafts=list;
+  $('#multiN').textContent=list.length;
+  $('#multiList').innerHTML=list.map((d,k)=>'<label class="mrow"><input type="checkbox" checked data-k="'+k+'"><div><div class="mt">'+(CATMAP[d.cat]||CATMAP.personal).e+' '+esc(d.title)+(d.nag?' 🔥':'')+'</div><div class="mw">'+draftLabel(d)+'</div></div></label>').join('');
+  $('#multi').classList.add('show');
+}
+function addDraft(d){
+  const i={id:newId(),title:d.title,at:d.at||9e15,repeat:d.repeat||'none',pri:d.nag?'high':'normal',cat:d.cat,early:0,done:false,fired:false,created:Date.now()};
+  if(d.nag)i.nag=true;
+  if(d.trigType){
+    if(d.trigType==='place'){
+      const p=places().find(x=>x.name===d.placeName);
+      if(p)i.trig={type:'place',name:p.name,lat:p.lat,lng:p.lng};
+      else{i.at=Date.now()+36e5;i.title+=' ('+d.placeName+')'}
+    }else if(d.trigType==='car'){const c=carDev();i.trig={type:'car',device:c?c.addr:'',devName:c?c.name:''}}
+    else i.trig={type:d.trigType};
+    if(i.trig)i.at=9e15;
+  }
+  items.push(i);put(i);
+  return i;
+}
+
+/* ---- voice ---- */
+let voiceFinal='';
+function startListening(){
+  voiceFinal='';$('#listenTxt').textContent='מקשיב… דבר חופשי';$('#listen').classList.add('show');
+  try{AndroidApp.startVoice()}catch(e){$('#listen').classList.remove('show')}
+}
+function stopListening(){try{AndroidApp.stopVoice()}catch(e){}$('#listen').classList.remove('show')}
+window.onVoiceState=function(s){if(s==='processing')$('#listenTxt').textContent=($('#listenTxt').textContent||'')+' …'};
+window.onVoice=function(text,fin,err){
+  if(text&&!fin){$('#listenTxt').textContent=text;return}
+  $('#listen').classList.remove('show');
+  if(!text){
+    if(err==='no_permission')toast('צריך הרשאת מיקרופון 🎙️');
+    else if(err==='unavailable')toast('אין בטלפון זיהוי דיבור — אפשר להקליד');
+    else if(err&&err!=='cancel'&&err!=='err7')toast('לא שמעתי טוב — נסה שוב');
+    else if(err==='err7')toast('לא שמעתי כלום — נסה שוב');
+    return;
+  }
+  const segs=splitMulti(text);
+  if(segs.length<=1){
+    $('#txt').value=text;$('#txt').dispatchEvent(new Event('input'));
+    const pc=parseCtx(text);if(pc.type)applyCtxToComposer(pc);if(pc.nag){$('#nag').checked=true;$('#buddy').style.display='block'}
+    toast('✨ בדוק ולחץ "הוסף תזכורת"');
+  }else showMulti(segs.map(draftFrom));
+};
+function applyCtxToComposer(pc){
+  if(!pc.type)return;
+  setTrig(pc.type);
+  if(pc.type==='place'&&pc.place){
+    placeOptions();
+    if(![...$('#place').options].some(o=>o.value===pc.place)){const o=document.createElement('option');o.value=pc.place;o.textContent='➕ '+pc.place+' (עוד לא שמור)';$('#place').insertBefore(o,$('#place').lastChild)}
+    $('#place').value=pc.place;updatePlaceBtn();
+  }
+}
+
+/* ---- share (WhatsApp) ---- */
+function shareItem(i){
+  const when=i.trig?trigLabel(i).replace(/^\S+\s/,''):fmtWhen(i.at);
+  const msg='⏰ תזכורת: '+i.title+'\n🗓️ '+when+'\n\n(נשלח מאפליקציית "תזכורות")';
+  location.href='https://wa.me/?text='+encodeURIComponent(msg);
+}
+
+/* ---- settings sheet ---- */
 function renderNativeSheet(){
   const st=nstatus();
   const row=(ok,txt,btn,fn)=>'<div class="chk"><span>'+(ok?'✅':'⚠️')+' '+txt+'</span>'+(ok?'':'<button class="act" data-fix="'+fn+'">'+btn+'</button>')+'</div>';
-  $('#sheet .box').innerHTML='<h3>📱 הגדרות התראות</h3>'+
-    '<p>כדי שהטלפון יצלצל תמיד בזמן — גם כשהאפליקציה סגורה והמסך כבוי — ודא ששלושת הסעיפים מסומנים ✅:</p>'+
+  const prow=(ok,txt,perm)=>'<div class="chk"><span>'+(ok?'✅':'⚪')+' '+txt+'</span>'+(ok?'':'<button class="act" data-perm="'+perm+'">לאשר</button>')+'</div>';
+  const cd=carDev(), ps=places();
+  let carHtml='';
+  if(st.bt){
+    let devs=[];try{devs=JSON.parse(AndroidApp.btDevices())}catch(e){}
+    carHtml='<div class="chk"><span>🚗 האוטו שלי:</span><select id="carSel" style="max-width:55%;background:#14152b;color:#fff;border:1px solid #33355f;border-radius:8px;padding:6px"><option value="">כל מכשיר בלוטות׳</option>'+devs.map(d=>'<option value="'+esc(d.addr)+'"'+(cd&&cd.addr===d.addr?' selected':'')+'>'+esc(d.name)+'</option>').join('')+'</select></div>';
+  }
+  $('#sheet .box').innerHTML='<h3>⚙️ הגדרות</h3>'+
+    '<p><b>צלצול בזמן</b> — גם כשהאפליקציה סגורה והמסך כבוי:</p>'+
     row(st.notifications!==false,'התראות מותרות','לאשר','notif')+
     row(st.exact!==false,'שעונים מדויקים','לאשר','exact')+
     row(!!st.battery,'בלי הגבלת סוללה (מומלץ)','לשחרר','battery')+
-    '<p style="margin-top:12px">בחלק מהטלפונים (שיאומי, סמסונג, אופו) כדאי גם: הגדרות ← אפליקציות ← תזכורות ← לאפשר "הפעלה אוטומטית" ו"פעילות ברקע".</p>'+
     '<button class="add" id="testBtn" style="margin-top:6px">🔔 בדיקת צלצול (בעוד 5 שניות)</button>'+
+    '<p style="margin-top:16px"><b>🗣️ קול</b></p>'+
+    '<div class="chk"><span>להקריא תזכורות בקול</span><input type="checkbox" id="speakT" '+(speakOn()?'checked':'')+' style="width:20px;height:20px;accent-color:#7c6cff"></div>'+
+    (st.tts===false?'<div class="chk"><span>⚠️ אין קול עברי בטלפון</span><button class="act" data-fix="tts">להתקין</button></div>':'')+
+    prow(!!st.mic,'מיקרופון (להכתבה)','mic')+
+    '<p style="margin-top:16px"><b>🧭 תזכורות לפי מצב</b></p>'+
+    prow(!!st.bt,'בלוטות׳ — לזהות כניסה לאוטו','bt')+carHtml+
+    prow(!!st.phone,'טלפון — לזהות סוף שיחה','phone')+
+    prow(!!st.location,'מיקום — לזהות הגעה למקום','location')+
+    (st.location?prow(!!st.bglocation,'מיקום ברקע ("כל הזמן")','bglocation'):'')+
+    (ps.length?'<div style="margin:8px 0;font-size:13px;color:#cfd0ec">מקומות שמורים: '+ps.map(p=>'<span class="tag" style="margin:2px;display:inline-block">📍 '+esc(p.name)+' <button class="act del" data-delplace="'+esc(p.name)+'" style="padding:0 4px">✕</button></span>').join('')+'</div>':'')+
+    '<p style="margin-top:16px"><b>🔥 לא נותן לברוח</b></p>'+
+    prow(!!st.sms,'SMS — לשלוח לאיש קשר אם לא ביצעת','sms')+
+    '<p style="margin-top:12px;font-size:12.5px">בחלק מהטלפונים (שיאומי, סמסונג, אופו) כדאי גם: הגדרות ← אפליקציות ← תזכורות ← לאפשר "הפעלה אוטומטית" ו"פעילות ברקע".</p>'+
     '<button class="close" id="sheetClose2">סגור</button>';
-  $('#sheet .box').onclick=e=>{
+  const box=$('#sheet .box');
+  box.onclick=e=>{
     const f=e.target.closest('[data-fix]');
-    if(f){const k=f.dataset.fix;try{k==='notif'?AndroidApp.openNotificationSettings():k==='exact'?AndroidApp.openExactSettings():AndroidApp.openBatterySettings()}catch(x){}}
-    if(e.target.id==='testBtn'){try{AndroidApp.testAlarm('בדיקה — הכל עובד!')}catch(x){}toast('🔔 נעול את המסך — עוד 5 שניות יצלצל')}
+    if(f){const k=f.dataset.fix;try{k==='notif'?AndroidApp.openNotificationSettings():k==='exact'?AndroidApp.openExactSettings():k==='tts'?AndroidApp.openTtsSettings():AndroidApp.openBatterySettings()}catch(x){}}
+    const pm=e.target.closest('[data-perm]');if(pm){try{AndroidApp.requestPerm(pm.dataset.perm)}catch(x){}}
+    const dp=e.target.closest('[data-delplace]');if(dp){lsSet('places',places().filter(p=>p.name!==dp.dataset.delplace));renderNativeSheet()}
+    if(e.target.id==='testBtn'){try{AndroidApp.testAlarm('בדיקה — הכל עובד!')}catch(x){}toast('🔔 נעל את המסך — עוד 5 שניות יצלצל');if(speakOn())setTimeout(()=>{try{AndroidApp.speak('בדיקה. הכל עובד')}catch(x){}},5200)}
     if(e.target.id==='sheetClose2')$('#sheet').classList.remove('show');
   };
+  const sp=$('#speakT');if(sp)sp.onchange=()=>{lsSet('speak',sp.checked);if(sp.checked){try{AndroidApp.speak('אני אקריא לך את התזכורות')}catch(x){}}};
+  const cs=$('#carSel');if(cs)cs.onchange=()=>{const o=cs.options[cs.selectedIndex];lsSet('carDev',cs.value?{addr:cs.value,name:o.textContent}:null);toast(cs.value?'🚗 האוטו נשמר: '+o.textContent:'אזכיר בכל חיבור בלוטות׳')};
+}
+window.onPermsChanged=function(){renderNativeSheet();renderCtxNote();updateBell()};
+
+function initNativeUI(){
+  $('#mic').style.display='block';
+  $('#mic').addEventListener('click',startListening);
+  $('#listenStop').addEventListener('click',()=>{try{AndroidApp.stopVoice()}catch(e){}$('#listenTxt').textContent='מעבד…'});
+  $('#trig').addEventListener('click',e=>{const b=e.target.closest('.tg');if(b)setTrig(b.dataset.t)});
+  $('#ctxNote').addEventListener('click',e=>{const b=e.target.closest('[data-perm]');if(b)AndroidApp.requestPerm(b.dataset.perm)});
+  $('#place').addEventListener('change',()=>{updatePlaceBtn();$('#placeName').style.display=$('#place').value==='__new'?'block':'none'});
+  const pn=document.createElement('input');pn.id='placeName';pn.placeholder='שם המקום (למשל: הגן של הילדים)';pn.style.cssText='display:none;width:100%;margin-top:8px;background:#14152b;border:1px solid #33355f;color:#fff;border-radius:12px;padding:10px;font-size:15px;font-family:inherit';
+  $('#placeRow').after(pn);
+  pn.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();savePlaceNamed()}});
+  $('#savePlace').addEventListener('click',()=>{if($('#place').value==='__new'){if(pn.style.display==='block'&&pn.value.trim())savePlaceNamed();else{pn.style.display='block';pn.focus()}}else saveCurrentPlace()});
+  function savePlaceNamed(){
+    const n=pn.value.trim();if(!n){pn.focus();return}
+    const o=document.createElement('option');o.value=n;o.textContent='➕ '+n;$('#place').insertBefore(o,$('#place').lastChild);$('#place').value=n;
+    pn.value='';pn.style.display='none';saveCurrentPlace();
+  }
+  $('#nag').addEventListener('change',()=>{$('#buddy').style.display=$('#nag').checked?'block':'none'});
+  $('#txt').addEventListener('input',()=>{
+    const pc=parseCtx($('#txt').value);
+    if(pc.type&&pc.type!==trigMode)applyCtxToComposer(pc);
+    if(pc.nag&&!$('#nag').checked){$('#nag').checked=true;$('#buddy').style.display='block'}
+  });
+  $('#multiAdd').addEventListener('click',()=>{
+    const ks=[...$('#multiList').querySelectorAll('input:checked')].map(x=>+x.dataset.k);
+    ks.forEach(k=>addDraft(drafts[k]));
+    $('#multi').classList.remove('show');render();
+    toast('✅ נוספו '+ks.length+' תזכורות');confetti();
+    if(speakOn()){try{AndroidApp.speak('הוספתי '+ks.length+' תזכורות')}catch(e){}}
+  });
+  $('#multiCancel').addEventListener('click',()=>$('#multi').classList.remove('show'));
+  $('#txt').placeholder='כתוב או לחץ 🎙️ ודבר:\n"מחר ב-9 לרופא, וכשאגיע לסופר לקנות חלב"';
 }
 window.onNativeEvents=function(){
   if(!NATIVE)return;
@@ -542,7 +824,9 @@ window.onNativeEvents=function(){
     const i=items.find(x=>x.id===ev.id);if(!i)return;ch=true;
     if(ev.type==='fired'){i.fired=true}
     else if(ev.type==='moved'){i.at=ev.at;i.fired=false}
-    else if(ev.type==='done'){if(!i.done&&!(i.repeat&&i.repeat!=='none'&&i.at>Date.now())){complete(i)}else if(i.repeat&&i.repeat!=='none'){i.lastDone=Date.now()}}
+    else if(ev.type==='done'){if(i.trig&&!i.done){complete(i)}else if(!i.done&&!(i.repeat&&i.repeat!=='none'&&i.at>Date.now())){complete(i)}else if(i.repeat&&i.repeat!=='none'){i.lastDone=Date.now()}}
+    else if(ev.type==='ctxFired'){i.fired=true;i.firedAt=ev.at}
+    else if(ev.type==='smsSent'){toast('📩 נשלח SMS ל'+(i.buddy||'איש הקשר'))}
     else if(ev.type==='snooze'){if(!i.repeat||i.repeat==='none'){i.at=ev.at;i.fired=false}toast('⏰ נדחה — אזכיר שוב '+rel(ev.at))}
   });
   if(ch){saveLocal();render()}
@@ -554,7 +838,8 @@ window.onNativeOpen=function(id){
   if(i&&!i.done)showAlarm(i);
 };
 window.onNativeBack=function(){
-  for(const s of ['#alarm','#sheet']){if($(s).classList.contains('show')){$(s).classList.remove('show');return true}}
+  if($('#listen').classList.contains('show')){stopListening();return true}
+  for(const s of ['#alarm','#multi','#sheet']){if($(s).classList.contains('show')){$(s).classList.remove('show');return true}}
   return false;
 };
 
@@ -562,6 +847,7 @@ loadLocal();if(NATIVE)window.onNativeEvents();renderCats();render();banner();tic
 if(NATIVE){
   setSync('on','📱 נשמר בטלפון · עובד גם בלי אינטרנט');
   document.querySelector('#sync').style.display='flex';
+  document.body.classList.add('native');initNativeUI();
   renderNativeSheet();
   $('#bell').addEventListener('click',renderNativeSheet,true);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden){renderNativeSheet();updateBell()}});

@@ -73,6 +73,32 @@ h1 span{background:linear-gradient(90deg,var(--accent),var(--accent2));-webkit-b
 .empty b{display:block;font-size:42px;margin-bottom:8px}
 
 .toast{position:fixed;bottom:calc(20px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%) translateY(120px);background:#2b2d58;color:#fff;padding:12px 18px;border-radius:14px;font-size:14px;transition:.3s;z-index:20;max-width:90%;text-align:center;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+body:not(.native) .nat{display:none!important}
+.trig{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}
+.tg{border:1px solid #3a3c6b;background:transparent;color:var(--text);border-radius:10px;padding:7px 10px;font-size:13px;cursor:pointer;font-family:inherit}
+.tg.on{background:linear-gradient(90deg,var(--accent),var(--accent2));border-color:transparent}
+.ctxnote{font-size:12.5px;color:var(--warn);margin-top:8px;line-height:1.5}
+.ctxnote button{background:none;border:0;color:var(--accent2);font-weight:700;font-family:inherit;font-size:12.5px;padding:0;cursor:pointer}
+.nagbox{margin-top:12px;background:#24152a;border:1px solid #4a2540;border-radius:12px;padding:10px 12px}
+.nagl{display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer}
+.nagl small{color:var(--muted);font-size:11.5px}
+.nagl input{accent-color:var(--danger);width:18px;height:18px}
+.nagbox input[type=tel]{margin-top:10px;width:100%;background:#14152b;border:1px solid #33355f;color:var(--text);border-radius:10px;padding:10px;font-size:14px;font-family:inherit}
+.mrow{display:flex;gap:10px;align-items:flex-start;background:var(--card2);border-radius:12px;padding:10px 12px;margin:8px 0}
+.mrow input{accent-color:var(--accent);width:18px;height:18px;margin-top:2px}
+.mrow .mt{font-size:15px}
+.mrow .mw{font-size:12.5px;color:#c9c6ff;margin-top:3px}
+.listen{position:fixed;inset:0;background:rgba(8,8,20,.92);display:none;align-items:center;justify-content:center;z-index:35;padding:24px}
+.listen.show{display:flex}
+.lbox{text-align:center;width:100%;max-width:420px}
+#listenTxt{font-size:22px;line-height:1.4;margin:22px 0 10px;min-height:60px}
+.lhint{font-size:13px;color:var(--muted);margin-bottom:18px}
+.wave{display:flex;gap:6px;justify-content:center;align-items:center;height:60px}
+.wave i{display:block;width:8px;height:20px;border-radius:4px;background:linear-gradient(var(--accent),var(--accent2));animation:wv 1s infinite ease-in-out}
+.wave i:nth-child(2){animation-delay:.1s}.wave i:nth-child(3){animation-delay:.2s}.wave i:nth-child(4){animation-delay:.3s}.wave i:nth-child(5){animation-delay:.4s}
+@keyframes wv{50%{height:56px}}
+.tagc{background:#3b2a12!important;color:#ffcf8a}
+.tagn{background:#3d1820!important;color:#ff9aa5}
 .toast button{background:none;border:0;color:var(--accent2);font-weight:800;font-size:14px;margin-inline-start:12px;cursor:pointer;font-family:inherit}
 #confetti{position:fixed;inset:0;pointer-events:none;z-index:40;width:100%;height:100%}
 .hdr-r{display:flex;gap:10px;align-items:center}
@@ -107,7 +133,7 @@ h1 span{background:linear-gradient(90deg,var(--accent),var(--accent2));-webkit-b
 
 .sheet{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:flex-end;justify-content:center;z-index:25}
 .sheet.show{display:flex}
-.sheet .box{background:var(--card);width:100%;max-width:560px;border-radius:24px 24px 0 0;padding:22px 18px calc(22px + env(safe-area-inset-bottom))}
+.sheet .box{max-height:88vh;overflow-y:auto;background:var(--card);width:100%;max-width:560px;border-radius:24px 24px 0 0;padding:22px 18px calc(22px + env(safe-area-inset-bottom))}
 .sheet h3{margin:0 0 10px}
 .sheet p,.sheet li{color:#cfd0ec;font-size:14px;line-height:1.6}
 .sheet ol{padding-right:18px;margin:6px 0}
@@ -145,7 +171,18 @@ h1 span{background:linear-gradient(90deg,var(--accent),var(--accent2));-webkit-b
       <button class="chip" data-q="wk">בעוד שבוע</button>
     </div>
     <div class="cats" id="cats"></div>
-    <div class="row">
+    <div class="nat trig" id="trig">
+      <button class="tg on" data-t="time">⏰ בשעה מסוימת</button>
+      <button class="tg" data-t="car">🚗 כשאכנס לאוטו</button>
+      <button class="tg" data-t="call">📞 אחרי השיחה הבאה</button>
+      <button class="tg" data-t="place">📍 כשאגיע ל…</button>
+    </div>
+    <div class="row" id="placeRow" style="display:none">
+      <select id="place"></select>
+      <button class="act" id="savePlace" type="button" style="flex:0 0 auto">📍 שמור מיקום נוכחי</button>
+    </div>
+    <div class="ctxnote" id="ctxNote" style="display:none"></div>
+    <div class="row" id="rowDT">
       <input type="date" id="date">
       <input type="time" id="time">
     </div>
@@ -170,6 +207,10 @@ h1 span{background:linear-gradient(90deg,var(--accent),var(--accent2));-webkit-b
         <option value="60">+ התראה שעה לפני</option>
         <option value="1440">+ התראה יום לפני</option>
       </select>
+    </div>
+    <div class="nat nagbox" id="nagBox">
+      <label class="nagl"><input type="checkbox" id="nag"> 🔥 אל תיתן לי לברוח <small>(מצלצל כל 2 דק׳ עד שאסמן בוצע)</small></label>
+      <input type="tel" id="buddy" placeholder="אם לא ביצעתי אחרי 3 צלצולים — SMS ל… (לא חובה)" style="display:none">
     </div>
     <button class="add" id="add">הוסף תזכורת</button>
   </div>
@@ -205,6 +246,17 @@ h1 span{background:linear-gradient(90deg,var(--accent),var(--accent2));-webkit-b
     </div>
   </div>
 </div>
+
+<div class="sheet" id="multi">
+  <div class="box">
+    <h3>✨ זיהיתי <span id="multiN"></span> תזכורות</h3>
+    <div id="multiList"></div>
+    <button class="add" id="multiAdd">הוסף את כולן</button>
+    <button class="close" id="multiCancel">ביטול</button>
+  </div>
+</div>
+
+<div class="listen" id="listen"><div class="lbox"><div class="wave"><i></i><i></i><i></i><i></i><i></i></div><div id="listenTxt">מקשיב… דבר חופשי</div><div class="lhint">אפשר כמה תזכורות ברצף: "מחר ב-9 לרופא, וגם ביום חמישי להתקשר לאמא"</div><button class="close" id="listenStop">סיימתי</button></div></div>
 
 <div class="sheet" id="sheet">
   <div class="box">

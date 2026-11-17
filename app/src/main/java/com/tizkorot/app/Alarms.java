@@ -111,6 +111,10 @@ public final class Alarms {
                 String k = it.next();
                 if (now.has(k)) continue;
                 // keep test alarms and notification snoozes of repeating reminders until they ring
+                if (k.endsWith("_n") && now.has(k.substring(0, k.length() - 2))) {
+                    now.put(k, old.getJSONObject(k));
+                    continue;
+                }
                 if (("test".equals(k) || k.endsWith("_s")) && old.getJSONObject(k).optLong("at") > System.currentTimeMillis()) {
                     now.put(k, old.getJSONObject(k));
                     continue;

@@ -20,6 +20,16 @@ public class ActionReceiver extends BroadcastReceiver {
             ev.put("id", id);
             if ("done".equals(act)) {
                 ev.put("type", "done");
+                // stop "don't let me escape" mode
+                Alarms.cancel(c, id + "_n");
+                JSONObject all = Alarms.all(c);
+                all.remove(id + "_n");
+                JSONObject main = all.optJSONObject(id);
+                if (main != null && main.optBoolean("nag") && "none".equals(main.optString("repeat", "none"))
+                        && main.optLong("at") <= System.currentTimeMillis()) {
+                    all.remove(id);
+                }
+                Alarms.saveAll(c, all);
             } else {
                 long min = "snooze60".equals(act) ? 60 : 10;
                 long at = System.currentTimeMillis() + min * 60000L;
