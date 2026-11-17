@@ -1,0 +1,13 @@
+package com.tizkorot.app;
+
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+
+public class BootReceiver extends BroadcastReceiver {
+    @Override
+    public void onReceive(Context c, Intent intent) {
+        Alarms.ensureChannels(c);
+        Alarms.rescheduleAll(c);
+    }
+}

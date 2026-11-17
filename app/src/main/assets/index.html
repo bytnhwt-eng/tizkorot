@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1020">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="תזכורות">
+<title>תזכורות</title>
+<style>
+:root{
+  --bg:#0f1020; --card:#1a1b33; --card2:#23244a; --text:#f3f3fb; --muted:#9a9cc2;
+  --accent:#7c6cff; --accent2:#ff6ca8; --ok:#3ddc97; --warn:#ffb648; --danger:#ff5d6c;
+  --r:18px;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",Heebo,Arial,sans-serif}
+body{min-height:100vh;padding:env(safe-area-inset-top) 0 calc(env(safe-area-inset-bottom) + 24px)}
+.wrap{max-width:560px;margin:0 auto;padding:18px 16px}
+header{display:flex;align-items:center;justify-content:space-between;margin:6px 0 18px}
+h1{font-size:28px;margin:0;font-weight:800;letter-spacing:-.5px}
+h1 span{background:linear-gradient(90deg,var(--accent),var(--accent2));-webkit-background-clip:text;background-clip:text;color:transparent}
+.sub{color:var(--muted);font-size:14px;margin-top:2px}
+.bell{width:44px;height:44px;border-radius:14px;border:0;background:var(--card);color:var(--text);font-size:20px;cursor:pointer;position:relative}
+.bell.off::after{content:"";position:absolute;top:8px;left:8px;width:9px;height:9px;border-radius:50%;background:var(--danger)}
+
+.composer{background:linear-gradient(160deg,var(--card2),var(--card));border-radius:22px;padding:16px;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+.composer{position:relative}
+.mic{position:absolute;left:12px;top:12px;width:42px;height:42px;border-radius:50%;border:0;background:#2e3060;color:#fff;font-size:19px;cursor:pointer}
+.mic.on{background:var(--danger);animation:pulse 1s infinite}
+@keyframes pulse{50%{box-shadow:0 0 0 10px rgba(255,93,108,.15)}}
+.sync{display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;color:var(--muted);background:var(--card);border-radius:12px;padding:10px 12px}
+.sync .dot{width:8px;height:8px;border-radius:50%;background:#555}
+.sync.on .dot{background:var(--ok)}
+.sync.err .dot{background:var(--warn)}
+.sync label{margin-inline-start:auto;display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--text)}
+.sync input{accent-color:var(--accent);width:18px;height:18px}
+.composer textarea{padding-left:48px;width:100%;border:0;outline:0;resize:none;background:transparent;color:var(--text);font-size:18px;font-family:inherit;line-height:1.4;min-height:54px}
+.composer textarea::placeholder{color:#6f71a0}
+.hint{font-size:13px;color:var(--ok);min-height:18px;margin:4px 0 10px}
+.chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:0 0 auto;border:1px solid #3a3c6b;background:transparent;color:var(--text);border-radius:999px;padding:8px 13px;font-size:14px;cursor:pointer;font-family:inherit}
+.chip.on{background:var(--accent);border-color:var(--accent)}
+.row{display:flex;gap:8px;margin-top:12px;align-items:center}
+.row input,.row select{flex:1;min-width:0;background:#14152b;border:1px solid #33355f;color:var(--text);border-radius:12px;padding:11px 10px;font-size:15px;font-family:inherit;color-scheme:dark}
+.add{margin-top:14px;width:100%;border:0;border-radius:14px;padding:15px;font-size:17px;font-weight:700;color:#fff;cursor:pointer;font-family:inherit;background:linear-gradient(90deg,var(--accent),var(--accent2))}
+.add:active{transform:scale(.98)}
+
+.tabs{display:flex;gap:6px;margin:22px 0 12px;background:var(--card);padding:5px;border-radius:14px}
+.tab{flex:1;border:0;background:transparent;color:var(--muted);padding:9px;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit}
+.tab.on{background:var(--card2);color:var(--text)}
+
+.group{font-size:13px;color:var(--muted);margin:16px 4px 8px;font-weight:700}
+.item{display:flex;gap:12px;align-items:flex-start;background:var(--card);border-radius:var(--r);padding:14px;margin-bottom:9px;border-right:4px solid var(--accent);animation:in .25s ease}
+.item.overdue{border-right-color:var(--danger)}
+.item.done{opacity:.55;border-right-color:#444}
+.item.done .t{text-decoration:line-through}
+@keyframes in{from{opacity:0;transform:translateY(6px)}}
+.check{flex:0 0 26px;height:26px;border-radius:50%;border:2px solid #555889;background:transparent;cursor:pointer;color:#fff;font-size:14px;margin-top:2px}
+.done .check{background:var(--ok);border-color:var(--ok)}
+.body{flex:1;min-width:0}
+.t{font-size:16px;line-height:1.35;word-wrap:break-word}
+.meta{font-size:13px;color:var(--muted);margin-top:5px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.when{color:#c9c6ff}
+.overdue .when{color:var(--danger)}
+.tag{background:#2c2e57;border-radius:6px;padding:1px 7px;font-size:12px}
+.acts{display:flex;gap:4px;margin-top:9px;flex-wrap:wrap}
+.act{border:0;background:#26284d;color:var(--text);border-radius:9px;padding:6px 10px;font-size:13px;cursor:pointer;font-family:inherit}
+.act.del{color:var(--danger)}
+.empty{text-align:center;color:var(--muted);padding:40px 10px;font-size:15px}
+.empty b{display:block;font-size:42px;margin-bottom:8px}
+
+.toast{position:fixed;bottom:calc(20px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%) translateY(120px);background:#2b2d58;color:#fff;padding:12px 18px;border-radius:14px;font-size:14px;transition:.3s;z-index:20;max-width:90%;text-align:center;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.toast button{background:none;border:0;color:var(--accent2);font-weight:800;font-size:14px;margin-inline-start:12px;cursor:pointer;font-family:inherit}
+#confetti{position:fixed;inset:0;pointer-events:none;z-index:40;width:100%;height:100%}
+.hdr-r{display:flex;gap:10px;align-items:center}
+.ring{width:44px;height:44px;position:relative}
+.ring svg{width:44px;height:44px;transform:rotate(-90deg)}
+.ring circle{fill:none;stroke-width:4}
+.ring .bg{stroke:#262850}
+.ring .fg{stroke:url(#none);stroke:var(--ok);stroke-linecap:round;stroke-dasharray:113.1;stroke-dashoffset:113.1;transition:stroke-dashoffset .6s}
+.ring span{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700}
+.stats{display:flex;gap:8px;margin:-6px 0 14px;flex-wrap:wrap}
+.stat{background:var(--card);border-radius:10px;padding:6px 10px;font-size:12px;color:var(--muted)}
+.stat b{color:var(--text)}
+.stat.bad b{color:var(--danger)}
+.cats{display:flex;gap:6px;margin-top:12px;flex-wrap:wrap}
+.cat{border:1px solid #3a3c6b;background:transparent;color:var(--text);border-radius:10px;padding:6px 10px;font-size:13px;cursor:pointer;font-family:inherit}
+.cat.on{border-color:transparent;background:var(--c,#7c6cff)}
+.tools{margin-bottom:10px}
+.tools input{width:100%;background:var(--card);border:1px solid #2c2e57;color:var(--text);border-radius:12px;padding:11px 12px;font-size:15px;font-family:inherit;outline:0}
+.fcats{margin-bottom:4px}
+.fcats .chip{font-size:13px;padding:6px 11px}
+.toast.show{transform:translateX(-50%) translateY(0)}
+
+.alarm{position:fixed;inset:0;background:rgba(8,8,20,.88);backdrop-filter:blur(6px);display:none;align-items:center;justify-content:center;z-index:30;padding:20px}
+.alarm.show{display:flex}
+.alarm .box{background:linear-gradient(160deg,var(--card2),var(--card));border-radius:26px;padding:28px 22px;width:100%;max-width:400px;text-align:center}
+.alarm .ic{font-size:54px;animation:ring 1s infinite}
+@keyframes ring{0%,100%{transform:rotate(0)}20%{transform:rotate(-18deg)}40%{transform:rotate(18deg)}60%{transform:rotate(-10deg)}}
+.alarm h2{margin:12px 0 22px;font-size:22px;line-height:1.35}
+.alarm .btns{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.alarm .btns button{border:0;border-radius:12px;padding:12px 6px;font-size:14px;font-family:inherit;cursor:pointer;background:#2e3060;color:#fff}
+.alarm .btns .ok{grid-column:1/-1;background:linear-gradient(90deg,var(--accent),var(--accent2));font-weight:700;font-size:16px;padding:14px}
+
+.sheet{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:flex-end;justify-content:center;z-index:25}
+.sheet.show{display:flex}
+.sheet .box{background:var(--card);width:100%;max-width:560px;border-radius:24px 24px 0 0;padding:22px 18px calc(22px + env(safe-area-inset-bottom))}
+.sheet h3{margin:0 0 10px}
+.sheet p,.sheet li{color:#cfd0ec;font-size:14px;line-height:1.6}
+.sheet ol{padding-right:18px;margin:6px 0}
+.chk{display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--card2);border-radius:12px;padding:10px 12px;margin:8px 0;font-size:14px}
+.sheet .close{margin-top:14px;width:100%;border:0;border-radius:12px;padding:13px;background:var(--card2);color:#fff;font-size:15px;font-family:inherit}
+.banner{background:#2a2140;border:1px solid #4b3a74;border-radius:14px;padding:12px 14px;font-size:13px;color:#e6dcff;margin-top:14px;line-height:1.5}
+.banner button{background:none;border:0;color:var(--accent2);font-weight:700;font-size:13px;padding:0;cursor:pointer;font-family:inherit}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1><span>תזכורות</span> ⚡</h1>
+      <div class="sub" id="sub">כתוב או דבר — ואני אזכיר לך</div>
+    </div>
+    <div class="hdr-r">
+      <div class="ring" id="ring" title="ההתקדמות של היום"><svg viewBox="0 0 44 44"><circle cx="22" cy="22" r="18" class="bg"/><circle cx="22" cy="22" r="18" class="fg" id="ringFg"/></svg><span id="ringTxt">0/0</span></div>
+      <button class="bell" id="bell" title="התראות">🔔</button>
+    </div>
+  </header>
+  <div class="stats" id="stats"></div>
+
+  <div class="composer">
+    <button class="mic" id="mic" title="הקלטה קולית" style="display:none">🎙️</button>
+    <textarea id="txt" rows="2" placeholder="למשל: מחר ב-9 להתקשר לאמא&#10;או: בעוד 20 דקות להוציא את העוגה"></textarea>
+    <div class="hint" id="hint"></div>
+    <div class="chips" id="chips">
+      <button class="chip" data-q="10m">בעוד 10 דק׳</button>
+      <button class="chip" data-q="30m">בעוד חצי שעה</button>
+      <button class="chip" data-q="1h">בעוד שעה</button>
+      <button class="chip" data-q="3h">בעוד 3 שעות</button>
+      <button class="chip" data-q="eve">הערב 20:00</button>
+      <button class="chip" data-q="tmr">מחר 9:00</button>
+      <button class="chip" data-q="wk">בעוד שבוע</button>
+    </div>
+    <div class="cats" id="cats"></div>
+    <div class="row">
+      <input type="date" id="date">
+      <input type="time" id="time">
+    </div>
+    <div class="row">
+      <select id="repeat">
+        <option value="none">🔂 בלי חזרה</option>
+        <option value="daily">כל יום</option>
+        <option value="weekdays">ימים א׳–ה׳</option>
+        <option value="weekly">כל שבוע</option>
+        <option value="monthly">כל חודש</option>
+      </select>
+      <select id="pri">
+        <option value="normal">⚪ רגיל</option>
+        <option value="high">🔴 חשוב</option>
+      </select>
+    </div>
+    <div class="row">
+      <select id="early">
+        <option value="0">🔔 התראה בזמן בלבד</option>
+        <option value="5">+ התראה 5 דק׳ לפני</option>
+        <option value="15">+ התראה 15 דק׳ לפני</option>
+        <option value="60">+ התראה שעה לפני</option>
+        <option value="1440">+ התראה יום לפני</option>
+      </select>
+    </div>
+    <button class="add" id="add">הוסף תזכורת</button>
+  </div>
+
+  <div class="sync" id="sync"><span class="dot"></span><span id="syncTxt">מתחבר…</span>
+    <label id="gcalWrap" style="display:none"><input type="checkbox" id="gcalOn" checked> 📅 Google Calendar</label></div>
+  <div class="banner" id="banner" style="display:none"></div>
+
+  <div class="tabs">
+    <button class="tab on" data-f="up">קרובות</button>
+    <button class="tab" data-f="done">בוצעו</button>
+    <button class="tab" data-f="all">הכל</button>
+  </div>
+  <div class="tools">
+    <input id="search" type="search" placeholder="🔍 חיפוש…">
+  </div>
+  <div class="chips fcats" id="fcats"></div>
+  <div id="list"></div>
+</div>
+
+<div class="toast" id="toast"><span id="toastTxt"></span><button id="toastUndo" style="display:none">ביטול</button></div>
+<canvas id="confetti"></canvas>
+
+<div class="alarm" id="alarm">
+  <div class="box">
+    <div class="ic">⏰</div>
+    <h2 id="alarmText"></h2>
+    <div class="btns">
+      <button data-s="5">עוד 5 דק׳</button>
+      <button data-s="15">עוד 15 דק׳</button>
+      <button data-s="60">עוד שעה</button>
+      <button class="ok" id="alarmOk">בוצע ✓</button>
+    </div>
+  </div>
+</div>
+
+<div class="sheet" id="sheet">
+  <div class="box">
+    <h3>📱 איך לקבל התראות גם כשהאפליקציה סגורה</h3>
+    <p>כשהאפליקציה פתוחה היא מצלצלת בעצמה. כדי שהטלפון יצלצל <b>תמיד</b>, גם כשהמסך כבוי:</p>
+    <ol>
+      <li>השאר את <b>📅 Google Calendar</b> מסומן — כל תזכורת נכנסת אוטומטית ליומן שלך עם התראה בדיוק בזמן. (בפעם הראשונה תתבקש לאשר גישה.)</li>
+      <li>ודא שאפליקציית Google Calendar מותקנת בטלפון וההתראות שלה פתוחות.</li>
+      <li>לגישה מהירה: פתח את הקישור בדפדפן ← "הוסף למסך הבית".</li>
+    </ol>
+    <p>התזכורות נשמרות בחשבון שלך — רואים אותן גם בטלפון וגם במחשב.</p>
+    <button class="close" id="sheetClose">הבנתי</button>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
